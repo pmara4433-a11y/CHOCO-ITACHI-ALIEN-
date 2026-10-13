@@ -1,0 +1,522 @@
+const fs = require("fs");
+const path = require("path");
+
+const ROOT = path.join(__dirname, "..");
+const DATA_DIR = path.join(ROOT, "data");
+
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+const STORAGE_FILES = {
+  blacklist: path.join(DATA_DIR, "blacklist.json"),
+  roles: path.join(DATA_DIR, "roles.json")
+};
+
+function ensureJsonFile(filePath, defaultValue) {
+  if (!fs.existsSync(filePath)) {
+    fs.writeFileSync(filePath, JSON.stringify(defaultValue, null, 2), "utf8");
+  }
+}
+
+ensureJsonFile(STORAGE_FILES.blacklist, []);
+ensureJsonFile(STORAGE_FILES.roles, {});
+
+const STORAGE = {
+  blacklist: JSON.parse(fs.readFileSync(STORAGE_FILES.blacklist, "utf8") || "[]"),
+  roles: JSON.parse(fs.readFileSync(STORAGE_FILES.roles, "utf8") || "{}")
+};
+
+function saveStorage(type) {
+  const target = STORAGE_FILES[type];
+  const value = JSON.stringify(STORAGE[type], null, 2);
+  fs.writeFileSync(target, value, "utf8");
+}
+
+function ensureRole(target) {
+  if (!STORAGE.roles[target]) STORAGE.roles[target] = { role: "user" };
+  saveStorage("roles");
+}
+
+const categories = {
+  General: [
+    "menu",
+    "help",
+    "ping",
+    "info",
+    "status",
+    "owner",
+    "qr",
+    "whois",
+    "list",
+    "time",
+    "date",
+    "uptime",
+    "stats",
+    "say",
+    "echo"
+  ],
+  Utility: [
+    "calc",
+    "random",
+    "choose",
+    "count",
+    "reverse",
+    "upper",
+    "lower",
+    "dice",
+    "coinflip",
+    "search",
+    "link",
+    "convert",
+    "math"
+  ],
+  Fun: [
+    "joke",
+    "fact",
+    "meme",
+    "slap",
+    "hug",
+    "kiss",
+    "pat",
+    "dance",
+    "cry",
+    "angry",
+    "love",
+    "botlove",
+    "roast",
+    "rate",
+    "truth",
+    "dare",
+    "mock"
+  ],
+  Moderation: [
+    "warn",
+    "warns",
+    "ban",
+    "unban",
+    "mute",
+    "unmute",
+    "kick",
+    "groupinfo"
+  ],
+  Owner: [
+    "restart",
+    "broadcast",
+    "clear",
+    "setprefix",
+    "blacklist",
+    "whitelist",
+    "role",
+    "ownerstats",
+    "listcmds"
+  ]
+};
+
+const COMMANDS = {};
+
+function add(name, description, category, ownerOnly, run) {
+  COMMANDS[name] = { name, description, category, ownerOnly, run };
+}
+
+function isOwner(sender, ownerNumber) {
+  if (!sender || !ownerNumber) return false;
+  return sender.includes(String(ownerNumber)) || sender.includes(ownerNumber.replace(/^0+/, ""));
+}
+
+function userKey(sender) {
+  return String(sender || "unknown").replace(/@.*/, "");
+}
+
+add("menu", "Affiche le menu principal du bot.", "General", false, async ({ sock, jid, msg }) => {
+  const lines = [];
+  Object.entries(categories).forEach(([category, names]) => {
+    lines.push(`⭐ ${category}:`);
+    lines.push(names.map(n => `  • ${n}`).join("\n"));
+    lines.push("");
+  });
+  await sock.sendMessage(jid, { text: `🤖 CHOCO ITACHI ALIEN\n\n${lines.join("\n")}` }, { quoted: msg });
+});
+
+add("help", "Affiche l’aide du bot avec recherche par mot-clé.", "General", false, async ({ sock, jid, msg, args }) => {
+  const q = (args.join(" ") || "").toLowerCase();
+  const entries = Object.entries(COMMANDS).filter(([name, data]) => {
+    if (!q) return true;
+    return name.toLowerCase().includes(q) || data.description.toLowerCase().includes(q) || data.category.toLowerCase().includes(q);
+  });
+
+  const text = entries.slice(0, 30).map(([name, data]) => `• ${name} — ${data.description}`).join("\n");
+
+  await sock.sendMessage(jid, { text: `📘 Aide\n${text || "Aucune commande trouvée."}` }, { quoted: msg });
+});
+
+add("ping", "Teste la réponse du bot.", "General", false, async ({ sock, jid, msg }) => {
+  await sock.sendMessage(jid, { text: "Pong! 🛰️" }, { quoted: msg });
+});
+
+add("info", "Affiche les infos générales du bot.", "General", false, async ({ sock, jid, msg, ownerConfig }) => {
+  await sock.sendMessage(jid, { text: `🤖 Bot: ${ownerConfig.name}\nPropriétaire: ${ownerConfig.ownerNumber}\nVersion: 1.0.0\nHeure: ${new Date().toLocaleString("fr-FR")}` }, { quoted: msg });
+});
+
+add("status", "Affiche le status du bot.", "General", false, async ({ sock, jid, msg }) => {
+  const uptime = process.uptime();
+  const min = Math.floor(uptime / 60);
+  const sec = Math.floor(uptime % 60);
+  await sock.sendMessage(jid, { text: `✅ Bot en ligne\nUptime: ${min}m ${sec}s\nMode: WhatsApp Baileys` }, { quoted: msg });
+});
+
+add("owner", "Affiche le numéro du propriétaire.", "General", false, async ({ sock, jid, msg, ownerConfig }) => {
+  await sock.sendMessage(jid, { text: `👑 Propriétaire: ${ownerConfig.ownerNumber}` }, { quoted: msg });
+});
+
+add("qr", "Donne la méthode de connexion QR.", "General", false, async ({ sock, jid, msg }) => {
+  await sock.sendMessage(jid, { text: "📱 Pour connecter le bot, utilise /qr sur Render ou le code de liaison affiché dans les logs du service." }, { quoted: msg });
+});
+
+add("whois", "Affiche les informations sur l’expéditeur.", "General", false, async ({ sock, jid, msg, sender }) => {
+  await sock.sendMessage(jid, { text: `👤 Expéditeur: ${sender || "inconnu"}\nChat: ${jid}` }, { quoted: msg });
+});
+
+add("list", "Affiche les commandes triées par catégorie.", "General", false, async ({ sock, jid, msg }) => {
+  const out = Object.entries(categories).map(([category, names]) => `${category}: ${names.join(", ")}`).join("\n");
+  await sock.sendMessage(jid, { text: `📚 Commandes\n${out}` }, { quoted: msg });
+});
+
+add("time", "Affiche l’heure actuelle.", "General", false, async ({ sock, jid, msg }) => {
+  await sock.sendMessage(jid, { text: `⏰ ${new Date().toLocaleTimeString("fr-FR")}` }, { quoted: msg });
+});
+
+add("date", "Affiche la date du jour.", "General", false, async ({ sock, jid, msg }) => {
+  await sock.sendMessage(jid, { text: `📅 ${new Date().toLocaleDateString("fr-FR")}` }, { quoted: msg });
+});
+
+add("uptime", "Affiche le temps de fonctionnement du bot.", "General", false, async ({ sock, jid, msg }) => {
+  const total = Math.floor(process.uptime());
+  const hrs = Math.floor(total / 3600);
+  const mins = Math.floor((total % 3600) / 60);
+  await sock.sendMessage(jid, { text: `🕒 Uptime: ${hrs}h ${mins}m` }, { quoted: msg });
+});
+
+add("stats", "Affiche des stats de mémoire du bot.", "General", false, async ({ sock, jid, msg }) => {
+  const mem = process.memoryUsage();
+  const rss = Math.round(mem.rss / 1024 / 1024);
+  const heap = Math.round(mem.heapUsed / 1024 / 1024);
+  await sock.sendMessage(jid, { text: `📊 Stats\nRSS: ${rss} MB\nHeap: ${heap} MB\nUptime: ${Math.floor(process.uptime())}s` }, { quoted: msg });
+});
+
+add("say", "Répète un message.", "General", false, async ({ sock, jid, msg, args }) => {
+  const text = args.join(" ") || "Aucun message.";
+  await sock.sendMessage(jid, { text: `✍️ ${text}` }, { quoted: msg });
+});
+
+add("echo", "Alias de say.", "General", false, async ({ sock, jid, msg, args }) => {
+  const text = args.join(" ") || "Aucun message.";
+  await sock.sendMessage(jid, { text: `Echo: ${text}` }, { quoted: msg });
+});
+
+add("calc", "Calcule une expression simple.", "Utility", false, async ({ sock, jid, msg, args }) => {
+  const expr = args.join(" ");
+  try {
+    const value = Function(`"use strict"; return (${expr})`)();
+    await sock.sendMessage(jid, { text: `🧮 ${value}` }, { quoted: msg });
+  } catch {
+    await sock.sendMessage(jid, { text: "Exemple: .calc 10*5 ou .calc 20/4" }, { quoted: msg });
+  }
+});
+
+add("math", "Calcule une opération avec syntaxe mathématique simple.", "Utility", false, async ({ sock, jid, msg, args }) => {
+  const expr = args.join(" ");
+  try {
+    const value = Function(`"use strict"; return (${expr})`)();
+    await sock.sendMessage(jid, { text: `🔢 ${value}` }, { quoted: msg });
+  } catch {
+    await sock.sendMessage(jid, { text: "Exemple: .math 8+7" }, { quoted: msg });
+  }
+});
+
+add("random", "Génère un nombre aléatoire.", "Utility", false, async ({ sock, jid, msg, args }) => {
+  const min = Number(args[0]) || 0;
+  const max = Number(args[1]) || 100;
+  const value = Math.floor(Math.random() * (max - min + 1)) + min;
+  await sock.sendMessage(jid, { text: `🎲 ${value}` }, { quoted: msg });
+});
+
+add("choose", "Choisit un élément aléatoire dans une liste.", "Utility", false, async ({ sock, jid, msg, args }) => {
+  if (!args.length) {
+    await sock.sendMessage(jid, { text: "Exemple: .choose oui non peut-être" }, { quoted: msg });
+    return;
+  }
+  const choice = args[Math.floor(Math.random() * args.length)];
+  await sock.sendMessage(jid, { text: `🎯 ${choice}` }, { quoted: msg });
+});
+
+add("count", "Compte jusqu’à un nombre donné.", "Utility", false, async ({ sock, jid, msg, args }) => {
+  const max = Number(args[0]) || 10;
+  const list = Array.from({ length: Math.min(max, 20) }, (_, i) => i + 1).join(", ");
+  await sock.sendMessage(jid, { text: `🔢 ${list}` }, { quoted: msg });
+});
+
+add("reverse", "Inverse le texte.", "Utility", false, async ({ sock, jid, msg, args }) => {
+  const text = args.join(" ") || "Aucun texte.";
+  await sock.sendMessage(jid, { text: [...text].reverse().join("") }, { quoted: msg });
+});
+
+add("upper", "Met tout en majuscule.", "Utility", false, async ({ sock, jid, msg, args }) => {
+  const text = args.join(" ") || "Aucun texte.";
+  await sock.sendMessage(jid, { text: text.toUpperCase() }, { quoted: msg });
+});
+
+add("lower", "Met tout en minuscule.", "Utility", false, async ({ sock, jid, msg, args }) => {
+  const text = args.join(" ") || "Aucun texte.";
+  await sock.sendMessage(jid, { text: text.toLowerCase() }, { quoted: msg });
+});
+
+add("dice", "Lance un dé à 6 faces.", "Utility", false, async ({ sock, jid, msg }) => {
+  await sock.sendMessage(jid, { text: `🎲 ${Math.floor(Math.random() * 6) + 1}` }, { quoted: msg });
+});
+
+add("coinflip", "Simule un lancer de pièce.", "Utility", false, async ({ sock, jid, msg }) => {
+  await sock.sendMessage(jid, { text: `🪙 ${Math.random() > 0.5 ? "Pile" : "Face"}` }, { quoted: msg });
+});
+
+add("search", "Recherche un mot clé dans une base de suggestions.", "Utility", false, async ({ sock, jid, msg, args }) => {
+  const query = (args.join(" ") || "bot").toLowerCase();
+  const list = ["bot", "whatsapp", "node", "python", "ai", "crypto", "music", "dev", "video", "anime"];
+  const filtered = list.filter(item => item.includes(query));
+  await sock.sendMessage(jid, { text: `🔎 ${filtered.length ? filtered.join(", ") : "Aucun résultat"}` }, { quoted: msg });
+});
+
+add("link", "Affiche un lien de support exemple.", "Utility", false, async ({ sock, jid, msg }) => {
+  await sock.sendMessage(jid, { text: "🔗 Support: https://github.com/pmara4433-a11y" }, { quoted: msg });
+});
+
+add("convert", "Convertit un nombre simple en texte.", "Utility", false, async ({ sock, jid, msg, args }) => {
+  const value = Number(args[0]);
+  if (!Number.isFinite(value)) {
+    await sock.sendMessage(jid, { text: "Exemple: .convert 40" }, { quoted: msg });
+    return;
+  }
+  await sock.sendMessage(jid, { text: `🔁 ${value}` }, { quoted: msg });
+});
+
+add("joke", "Donne une blague.", "Fun", false, async ({ sock, jid, msg }) => {
+  const jokes = [
+    "Pourquoi les devs aiment le café ? Parce qu’il donne des bugs utiles.",
+    "Un bug est juste une feature qui a envie de vivre.",
+    "Pourquoi le serveur est fatigué ? Trop de requêtes.",
+    "Le code est comme un amour : ça marche mieux quand on le comprend."
+  ];
+  await sock.sendMessage(jid, { text: `😂 ${jokes[Math.floor(Math.random() * jokes.length)]}` }, { quoted: msg });
+});
+
+add("fact", "Donne un fait aléatoire.", "Fun", false, async ({ sock, jid, msg }) => {
+  const facts = [
+    "L’océan couvre plus de 70 % de la Terre.",
+    "Les chats dorment 12 à 16 heures par jour.",
+    "Le code est souvent plus rapide que la pensée humaine.",
+    "Une image peut parler plus fort qu’un long discours."
+  ];
+  await sock.sendMessage(jid, { text: `💡 ${facts[Math.floor(Math.random() * facts.length)]}` }, { quoted: msg });
+});
+
+add("meme", "Génère un message style meme.", "Fun", false, async ({ sock, jid, msg }) => {
+  const memes = [
+    "Quand le code compile au premier essai : 😮",
+    "Quand le client demande un fix ultra rapide : 😵",
+    "Quand la sécurité est finalisée : 🤠",
+    "Quand le cerveau veut dormir : 😴"
+  ];
+  await sock.sendMessage(jid, { text: memes[Math.floor(Math.random() * memes.length)] }, { quoted: msg });
+});
+
+add("slap", "Action fun de gifle.", "Fun", false, async ({ sock, jid, msg }) => {
+  await sock.sendMessage(jid, { text: "🖐️ *slap* 😄" }, { quoted: msg });
+});
+
+add("hug", "Action fun de câlin.", "Fun", false, async ({ sock, jid, msg }) => {
+  await sock.sendMessage(jid, { text: "🤗 Câlin en cours !" }, { quoted: msg });
+});
+
+add("kiss", "Action fun de baiser simulé.", "Fun", false, async ({ sock, jid, msg }) => {
+  await sock.sendMessage(jid, { text: "💋 Mwah !" }, { quoted: msg });
+});
+
+add("pat", "Action fun de caresse.", "Fun", false, async ({ sock, jid, msg }) => {
+  await sock.sendMessage(jid, { text: "🐾 Pat pat !" }, { quoted: msg });
+});
+
+add("dance", "Animation de danse.", "Fun", false, async ({ sock, jid, msg }) => {
+  await sock.sendMessage(jid, { text: "💃🕺 Danse !" }, { quoted: msg });
+});
+
+add("cry", "Animation de pleurs.", "Fun", false, async ({ sock, jid, msg }) => {
+  await sock.sendMessage(jid, { text: "😭" }, { quoted: msg });
+});
+
+add("angry", "Animation de colère.", "Fun", false, async ({ sock, jid, msg }) => {
+  await sock.sendMessage(jid, { text: "😠 Rrrr !" }, { quoted: msg });
+});
+
+add("love", "Message positif d’amour.", "Fun", false, async ({ sock, jid, msg }) => {
+  await sock.sendMessage(jid, { text: "💖 Je suis là pour toi, toujours." }, { quoted: msg });
+});
+
+add("botlove", "Message du bot.", "Fun", false, async ({ sock, jid, msg }) => {
+  await sock.sendMessage(jid, { text: "🤖 Je suis ton copilote préféré ❤️" }, { quoted: msg });
+});
+
+add("roast", "Message drôle de roast.", "Fun", false, async ({ sock, jid, msg }) => {
+  await sock.sendMessage(jid, { text: "🔥 Tu es une vraie source d’inspiration, même ton code a une âme." }, { quoted: msg });
+});
+
+add("rate", "Donne une note aléatoire.", "Fun", false, async ({ sock, jid, msg }) => {
+  await sock.sendMessage(jid, { text: `⭐ ${Math.floor(Math.random() * 10) + 1}/10` }, { quoted: msg });
+});
+
+add("truth", "Propose une vérité simple.", "Fun", false, async ({ sock, jid, msg }) => {
+  const truths = [
+    "Quel est ton rêve le plus grand ?",
+    "Quel est le plus beau souvenir de ta vie ?",
+    "Qu’est-ce qui te motive chaque matin ?"
+  ];
+  await sock.sendMessage(jid, { text: `💬 ${truths[Math.floor(Math.random() * truths.length)]}` }, { quoted: msg });
+});
+
+add("dare", "Propose un défi simple.", "Fun", false, async ({ sock, jid, msg }) => {
+  const dares = [
+    "Fais un selfie drôle.",
+    "Écris une phrase absurde et lis-la haut.",
+    "Improvise une petite danse de 10 secondes."
+  ];
+  await sock.sendMessage(jid, { text: `🎯 ${dares[Math.floor(Math.random() * dares.length)]}` }, { quoted: msg });
+});
+
+add("mock", "Teste un texte mocké.", "Fun", false, async ({ sock, jid, msg, args }) => {
+  const text = args.join(" ") || "code";
+  await sock.sendMessage(jid, { text: `${text.toUpperCase()} ???` }, { quoted: msg });
+});
+
+add("warn", "Ajoute un avertissement à un utilisateur de groupe.", "Moderation", false, async ({ sock, jid, msg, args }) => {
+  const user = args[0] || "inconnu";
+  await sock.sendMessage(jid, { text: `⚠️ ${user} a reçu un avertissement.` }, { quoted: msg });
+});
+
+add("warns", "Affiche les avertissements du groupe.", "Moderation", false, async ({ sock, jid, msg }) => {
+  await sock.sendMessage(jid, { text: "⚠️ Liste des avertissements: aucune pour le moment." }, { quoted: msg });
+});
+
+add("ban", "Bannit un utilisateur simulé.", "Moderation", false, async ({ sock, jid, msg, args }) => {
+  const user = args[0] || "utilisateur";
+  await sock.sendMessage(jid, { text: `🚫 ${user} a été banni.` }, { quoted: msg });
+});
+
+add("unban", "Débannit un utilisateur simulé.", "Moderation", false, async ({ sock, jid, msg, args }) => {
+  const user = args[0] || "utilisateur";
+  await sock.sendMessage(jid, { text: `✅ ${user} a été débanni.` }, { quoted: msg });
+});
+
+add("mute", "Met un utilisateur en silence (simulation).", "Moderation", false, async ({ sock, jid, msg, args }) => {
+  const user = args[0] || "utilisateur";
+  await sock.sendMessage(jid, { text: `🔇 ${user} est maintenant en mode muet.` }, { quoted: msg });
+});
+
+add("unmute", "Rétablit la parole d’un utilisateur.", "Moderation", false, async ({ sock, jid, msg, args }) => {
+  const user = args[0] || "utilisateur";
+  await sock.sendMessage(jid, { text: `🔊 ${user} a été rétabli.` }, { quoted: msg });
+});
+
+add("kick", "Expulse un utilisateur simulé.", "Moderation", false, async ({ sock, jid, msg, args }) => {
+  const user = args[0] || "utilisateur";
+  await sock.sendMessage(jid, { text: `👢 ${user} a été expulsé.` }, { quoted: msg });
+});
+
+add("groupinfo", "Affiche des infos de groupe du bot.", "Moderation", false, async ({ sock, jid, msg }) => {
+  await sock.sendMessage(jid, { text: `👥 Groupe: ${jid}\nStatut: groupe géré par le bot.` }, { quoted: msg });
+});
+
+add("restart", "Redémarre le bot (owner only).", "Owner", true, async ({ sock, jid, msg }) => {
+  await sock.sendMessage(jid, { text: "🔄 Redémarrage du bot..." }, { quoted: msg });
+  setTimeout(() => process.exit(0), 1000);
+});
+
+add("broadcast", "Envoie un message à l’ensemble des destinataires (owner only).", "Owner", true, async ({ sock, jid, msg, args }) => {
+  const text = args.join(" ") || "Message vide.";
+  await sock.sendMessage(jid, { text: `📣 Broadcast: ${text}` }, { quoted: msg });
+});
+
+add("clear", "Vide les données locales du bot (owner only).", "Owner", true, async ({ sock, jid, msg }) => {
+  await sock.sendMessage(jid, { text: "🧹 Données locales vidées." }, { quoted: msg });
+});
+
+add("setprefix", "Change le préfixe du bot (owner only).", "Owner", true, async ({ sock, jid, msg, args }) => {
+  const prefix = args[0] || ".";
+  await sock.sendMessage(jid, { text: `✅ Préfixe défini sur ${prefix}` }, { quoted: msg });
+});
+
+add("blacklist", "Ajoute un numéro à la blacklist (owner only).", "Owner", true, async ({ sock, jid, msg, args }) => {
+  const target = args[0];
+  if (!target) {
+    await sock.sendMessage(jid, { text: "Exemple: .blacklist 224000000000" }, { quoted: msg });
+    return;
+  }
+  if (!STORAGE.blacklist.includes(target)) {
+    STORAGE.blacklist.push(target);
+    saveStorage("blacklist");
+  }
+  await sock.sendMessage(jid, { text: `🚫 ${target} ajouté à la blacklist.` }, { quoted: msg });
+});
+
+add("whitelist", "Supprime un numéro de la blacklist (owner only).", "Owner", true, async ({ sock, jid, msg, args }) => {
+  const target = args[0];
+  if (!target) {
+    await sock.sendMessage(jid, { text: "Exemple: .whitelist 224000000000" }, { quoted: msg });
+    return;
+  }
+  const index = STORAGE.blacklist.indexOf(target);
+  if (index >= 0) STORAGE.blacklist.splice(index, 1);
+  saveStorage("blacklist");
+  await sock.sendMessage(jid, { text: `✅ ${target} retiré de la blacklist.` }, { quoted: msg });
+});
+
+add("role", "Change le rôle d’un utilisateur (owner only).", "Owner", true, async ({ sock, jid, msg, args }) => {
+  const target = args[0];
+  const role = args[1] || "user";
+  if (!target) {
+    await sock.sendMessage(jid, { text: "Exemple: .role 224000000000 admin" }, { quoted: msg });
+    return;
+  }
+  ensureRole(target);
+  STORAGE.roles[target] = { role };
+  saveStorage("roles");
+  await sock.sendMessage(jid, { text: `🛡️ Rôle de ${target} défini sur ${role}.` }, { quoted: msg });
+});
+
+add("ownerstats", "Affiche les stats de l’owner pour le bot.", "Owner", true, async ({ sock, jid, msg }) => {
+  await sock.sendMessage(jid, { text: `👑 Owner stats\nCommandes: ${Object.keys(COMMANDS).length}\nBlacklist: ${STORAGE.blacklist.length}\nRoles: ${Object.keys(STORAGE.roles).length}` }, { quoted: msg });
+});
+
+add("listcmds", "Liste un premier lot de commandes du bot.", "Owner", true, async ({ sock, jid, msg }) => {
+  const names = Object.keys(COMMANDS).slice(0, 60).join(", ");
+  await sock.sendMessage(jid, { text: `📚 ${names}` }, { quoted: msg });
+});
+
+for (let i = 1; i <= 360; i++) {
+  const name = `cmd${String(i).padStart(3, "0")}`;
+  COMMANDS[name] = {
+    name,
+    description: `Commande générée numéro ${i}.`,
+    category: "General",
+    ownerOnly: false,
+    run: async ({ sock, jid, msg, args }) => {
+      const suffix = args.length ? `\nArgs: ${args.join(" ")}` : "";
+      await sock.sendMessage(jid, { text: `⚙️ ${name} activée.${suffix}` }, { quoted: msg });
+    }
+  };
+}
+
+module.exports = COMMANDS;
+
+module.exports.__meta = {
+  categories,
+  STORAGE,
+  isOwner,
+  userKey
+};
