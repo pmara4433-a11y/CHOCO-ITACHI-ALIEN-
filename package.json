@@ -1,16 +1,21 @@
 {
   "name": "choco-itachi-alien",
-  "version": "1.0.0",
+  "version": "20.0.0",
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.8",
+    "@whiskeysockets/baileys": "^6.7.18",
+    "axios": "^1.7.2",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "file-type": "^19.0.0",
+    "fs-extra": "^11.2.0",
+    "moment-timezone": "^0.5.45",
     "pino": "^9.0.0",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0"
   }
 }
